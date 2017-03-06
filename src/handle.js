@@ -7,13 +7,14 @@ const VALID_KEYS = {
   success: true,
   failure: true,
   finish: true,
+  cancel: true,
   always: true,
 };
 
 function verifyHandlers(handlers, action) {
   Object.keys(handlers).forEach(key => {
     invariant(VALID_KEYS[key], deline`
-      The handler for action ${action.type} had a ${key} property defined, but this is not 
+      The handler for action ${action.type} had a ${key} property defined, but this is not
       a valid key for a redux-pack handler. Valid keys are: ${Object.keys(VALID_KEYS)}
     `);
   });
@@ -34,7 +35,7 @@ function safeMap(state, fn, action, name) {
       // if we've dropped into this case, we've got a problem. Someone is setting
       // things on the handler object they aren't supposed to.
       invariant(false, deline`
-        The ${name} handler for action ${action.type} is expected to be a function, 
+        The ${name} handler for action ${action.type} is expected to be a function,
         but found ${typeof fn} instead.
       `);
       return state;
@@ -67,6 +68,10 @@ function handle(startingState, action, handlers) {
       break;
     case LIFECYCLE.FAILURE:
       state = safeMap(state, handlers.failure, action, 'failure');
+      state = safeMap(state, handlers.finish, action, 'finish');
+      break;
+    case LIFECYCLE.CANCEL:
+      state = safeMap(state, handlers.cancel, action, 'cancel');
       state = safeMap(state, handlers.finish, action, 'finish');
       break;
     default:

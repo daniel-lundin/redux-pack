@@ -1,5 +1,5 @@
 import uuid from 'uuid';
-import { KEY, LIFECYCLE } from './constants';
+import { KEY, LIFECYCLE, PROMISE_CANCEL_REASON } from './constants';
 
 function isPromise(obj) {
   return !!obj && typeof obj.then === 'function';
@@ -17,7 +17,7 @@ function handleEventHook(meta, hook, ...args) {
   }
 }
 
-function handlePromise(dispatch, getState, action) {
+function handlePromise(dispatch, getState, action, cancelConstant = PROMISE_CANCEL_REASON) {
   const { promise, type, payload, meta } = action;
 
   // it is sometimes useful to be able to track the actions and associated promise lifecycle with a
@@ -52,18 +52,33 @@ function handlePromise(dispatch, getState, action) {
   };
 
   const failure = error => {
-    dispatch({
-      type,
-      payload: error,
-      error: true,
-      meta: {
-        ...meta,
-        startPayload,
-        [KEY.LIFECYCLE]: LIFECYCLE.FAILURE,
-        [KEY.TRANSACTION]: transactionId,
-      },
-    });
-    handleEventHook(meta, 'onFailure', error, getState);
+    if (err === PROMISE_CANCEL_REASON) {
+      dispatch({
+        type,
+        payload: error,
+        error: true,
+        meta: {
+          ...meta,
+          startPayload,
+          [KEY.LIFECYCLE]: LIFECYCLE.CANCEL,
+          [KEY.TRANSACTION]: transactionId,
+        },
+      });
+      handleEventHook(meta, 'onCancel', error, getState);
+    } else {
+      dispatch({
+        type,
+        payload: error,
+        error: true,
+        meta: {
+          ...meta,
+          startPayload,
+          [KEY.LIFECYCLE]: LIFECYCLE.FAILURE,
+          [KEY.TRANSACTION]: transactionId,
+        },
+      });
+      handleEventHook(meta, 'onFailure', error, getState);
+    }
     handleEventHook(meta, 'onFinish', false, getState);
   };
 
@@ -75,7 +90,7 @@ function handlePromise(dispatch, getState, action) {
   return promise.then(success, failure);
 }
 
-const middleware = store => next => action => {
+const middleware = cancelConstant => store => next => action => {
   // a common use case for redux-thunk is to conditionally dispatch an action. By allowing for null,
   // we satisfy this use case without people having to use redux-thunk.
   if (action == null) {
@@ -85,7 +100,7 @@ const middleware = store => next => action => {
   // this is the convention-based promise middleware. Ideally, all "async actions" would go through
   // this pathway.
   if (isPromise(action.promise)) {
-    return handlePromise(store.dispatch, store.getState, action);
+    return handlePromise(store.dispatch, store.getState, action, cancelConstant);
   }
 
   // this is the "vanilla redux" pathway. These are plain old actions that will get sent to reducers
